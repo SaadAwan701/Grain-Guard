@@ -1,0 +1,179 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "memberships": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "devices": {
+      "$device": {
+        "meta": {
+          ".read": "auth != null && root.child('memberships').child(auth.uid).child($device).exists()"
+        },
+        "latest": {
+          ".validate": "newData.hasChildren(['schemaVersion','deviceId','lotId','sampleId','measuredAtMs','receivedAtMs']) && newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).exists() && newData.child('schemaVersion').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('schemaVersion').val() && newData.child('deviceId').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('deviceId').val() && newData.child('lotId').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('lotId').val() && newData.child('sampleId').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sampleId').val() && newData.child('measuredAtMs').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('measuredAtMs').val() && newData.child('receivedAtMs').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('receivedAtMs').val() && newData.child('sensors/temperatureC').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/temperatureC').val() && newData.child('sensors/relativeHumidityPct').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/relativeHumidityPct').val() && newData.child('sensors/co2Ppm').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/co2Ppm').val() && newData.child('sensors/gasResistanceOhm').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/gasResistanceOhm').val() && newData.child('sensors/acousticEvents').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/acousticEvents').val() && newData.child('sensors/acousticWindowSec').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('sensors/acousticWindowSec').val() && newData.child('battery/percent').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('battery/percent').val() && newData.child('battery/voltageMv').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('battery/voltageMv').val() && newData.child('battery/chargeState').val() === newData.parent().child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).child('battery/chargeState').val() && !root.child('devices').child($device).child('lots').child(newData.child('lotId').val()).child('samples').child(newData.child('sampleId').val()).exists()",
+          "schemaVersion": {
+            ".validate": "newData.val() === 1"
+          },
+          "deviceId": {
+            ".validate": "newData.val() === $device"
+          },
+          "lotId": {
+            ".validate": "newData.val() === root.child('devices').child($device).child('meta/activeLotId').val()"
+          },
+          "sampleId": {
+            ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,100}$/)"
+          },
+          "measuredAtMs": {
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0 && newData.val() <= now + 120000"
+          },
+          "receivedAtMs": {
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= now - 120000 && newData.val() <= now"
+          },
+          "sensors": {
+            ".validate": "newData.hasChildren() && (!newData.hasChild('acousticEvents') || newData.hasChild('acousticWindowSec'))",
+            "temperatureC": {
+              ".validate": "newData.isNumber() && newData.val() >= -60 && newData.val() <= 100"
+            },
+            "relativeHumidityPct": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            },
+            "co2Ppm": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000"
+            },
+            "gasResistanceOhm": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000"
+            },
+            "acousticEvents": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000 && newData.val() % 1 === 0"
+            },
+            "acousticWindowSec": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 86400 && newData.val() % 1 === 0"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "battery": {
+            "percent": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+            },
+            "voltageMv": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 60000"
+            },
+            "chargeState": {
+              ".validate": "newData.isString() && newData.val().matches(/^(charging|discharging|full|unknown)$/)"
+            },
+            "$other": {
+              ".validate": false
+            },
+            ".validate": "newData.hasChildren()"
+          },
+          "$other": {
+            ".validate": false
+          },
+          ".read": "auth != null && root.child('memberships').child(auth.uid).child($device).exists()",
+          ".write": "auth != null && root.child('deviceWriters').child($device).val() === auth.uid && newData.exists() && (!data.exists() || data.child('lotId').val() !== newData.child('lotId').val() || newData.child('measuredAtMs').val() > data.child('measuredAtMs').val())"
+        },
+        "lots": {
+          "$lot": {
+            "samples": {
+              ".indexOn": [
+                "measuredAtMs"
+              ],
+              ".read": "auth != null && root.child('memberships').child(auth.uid).child($device).exists() && query.orderByChild === 'measuredAtMs' && query.startAt != null && query.endAt != null && query.limitToLast != null && query.limitToLast <= 4321",
+              "$sample": {
+                ".read": "auth != null && root.child('deviceWriters').child($device).val() === auth.uid",
+                ".write": "auth != null && root.child('deviceWriters').child($device).val() === auth.uid && !data.exists() && newData.exists() && ($lot === root.child('devices').child($device).child('meta/activeLotId').val() || root.child('devices').child($device).child('lots').child($lot).exists())",
+                ".validate": "newData.hasChildren(['schemaVersion','deviceId','lotId','sampleId','measuredAtMs','receivedAtMs'])",
+                "schemaVersion": {
+                  ".validate": "newData.val() === 1"
+                },
+                "deviceId": {
+                  ".validate": "newData.val() === $device"
+                },
+                "lotId": {
+                  ".validate": "newData.val() === $lot"
+                },
+                "sampleId": {
+                  ".validate": "newData.val() === $sample && $sample.matches(/^[A-Za-z0-9_-]{1,100}$/)"
+                },
+                "measuredAtMs": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() > 0 && newData.val() <= now + 120000"
+                },
+                "receivedAtMs": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= now - 120000 && newData.val() <= now"
+                },
+                "sensors": {
+                  ".validate": "newData.hasChildren() && (!newData.hasChild('acousticEvents') || newData.hasChild('acousticWindowSec'))",
+                  "temperatureC": {
+                    ".validate": "newData.isNumber() && newData.val() >= -60 && newData.val() <= 100"
+                  },
+                  "relativeHumidityPct": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                  },
+                  "co2Ppm": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000"
+                  },
+                  "gasResistanceOhm": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000"
+                  },
+                  "acousticEvents": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000 && newData.val() % 1 === 0"
+                  },
+                  "acousticWindowSec": {
+                    ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 86400 && newData.val() % 1 === 0"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                },
+                "battery": {
+                  "percent": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                  },
+                  "voltageMv": {
+                    ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 60000"
+                  },
+                  "chargeState": {
+                    ".validate": "newData.isString() && newData.val().matches(/^(charging|discharging|full|unknown)$/)"
+                  },
+                  "$other": {
+                    ".validate": false
+                  },
+                  ".validate": "newData.hasChildren()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "userState": {
+      "$uid": {
+        "devices": {
+          "$device": {
+            "alertAcks": {
+              ".read": "auth != null && auth.uid === $uid && root.child('memberships').child($uid).child($device).exists()",
+              "$alert": {
+                ".write": "auth != null && auth.uid === $uid && root.child('memberships').child($uid).child($device).exists() && !data.exists() && newData.exists() && $alert.matches(/^[A-Za-z0-9_-]{1,200}$/)",
+                ".validate": "newData.hasChildren(['acknowledgedAtMs'])",
+                "acknowledgedAtMs": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= now - 120000 && newData.val() <= now"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
