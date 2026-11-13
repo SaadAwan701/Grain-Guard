@@ -81,6 +81,8 @@ flutter build apk --release --flavor staging --dart-define=GG_EMULATORS=true
 
 The staging APK uses development signing and can run its demo offline. For the Android integration test, start a clean Firebase emulator, seed it before publishing, clear the staging application's Android data if it was used before, and run `flutter test integration_test/live_feed_test.dart -d emulator-5554 --flavor staging --dart-define=GG_EMULATORS=true`.
 
+The 12 November 2026 staging build passed analyzer checks, eight Flutter tests and three Firebase rules tests. The API 36.1 Android emulator installed the development-signed APK, opened the demo with network access disabled, rotated the kernel, and updated a signed-in bin from **Waiting for first reading** to **Live readings** with a 67% device battery after an authenticated fixture publish. PDF and CSV exports opened the Android share sheet. The staging APK SHA-256 is `8B51BA7BAA4E17457E7BC5CDD0D591090A9A643CBD3628AEEAAC745FB8D99219`.
+
 Build the production artifact with `flutter build apk --release --flavor production --dart-define-from-file=config/production.json`. Verify it with `apksigner verify --verbose --print-certs` and `Get-FileHash -Algorithm SHA256`, then clean-install and upgrade the exact artifact on the target phones. Confirm the physical phones, venue connectivity, release signing ownership and installation channel.
 
 ## Publisher handoff
