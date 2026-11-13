@@ -1,0 +1,8 @@
+.tooling/
+.firebase/
+*-debug.log
+node_modules/
+*.jks
+*.keystore
+**/key.properties
+app/config/*.json
