@@ -33,6 +33,7 @@ class Bin {
     this.cadence = const Duration(minutes: 10),
     this.offlineTimeout,
     this.firmware,
+    this.storage,
   });
   final String id;
   final String label;
@@ -41,6 +42,28 @@ class Bin {
   final Duration? offlineTimeout;
   Duration get staleAfter => offlineTimeout ?? cadence * 3;
   final String? firmware;
+  final StorageConditions? storage;
+}
+
+class StorageConditions {
+  const StorageConditions(this.since, this.moisturePct, this.temperatureC);
+
+  final DateTime since;
+  final double moisturePct;
+  final double temperatureC;
+
+  static StorageConditions? decode(Object? raw, String activeLot) {
+    final data = fields(raw);
+    if (data['lotId'] != activeLot ||
+        data['constantConditionsConfirmed'] != true) {
+      return null;
+    }
+    final since = timestamp(data['storedSinceMs']);
+    final moisture = number(data['grainMoisturePctWetBasis'], 0, 100);
+    final temperature = number(data['grainTemperatureC'], -60, 100);
+    if (since == null || moisture == null || temperature == null) return null;
+    return StorageConditions(since, moisture, temperature);
+  }
 }
 
 class Reading {

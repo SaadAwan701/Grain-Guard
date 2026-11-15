@@ -247,8 +247,11 @@ class Report {
         '${readings.length} readings of approximately $expected expected'
             '${readings.length >= 4321 ? ' (query cap reached)' : ''}',
       ],
-      ['Risk rule version', demo ? demoRuleVersion : 'Unavailable'],
-      ['Remaining storage life', demo ? 'Illustrative only' : 'Unavailable'],
+      ['Risk rule version', demo ? demoRuleVersion : liveRuleVersion],
+      [
+        'Remaining storage life',
+        demo ? 'Illustrative only' : 'See live dashboard',
+      ],
       ['Dry matter loss', demo ? 'Illustrative only' : 'Unavailable'],
     ];
   }

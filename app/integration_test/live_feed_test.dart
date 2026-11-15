@@ -38,7 +38,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'assigned viewer goes from waiting to live after an authenticated publish',
+    'authenticated CO₂ publish goes live and raises an urgent alert',
     (tester) async {
       app.main();
       await waitFor(tester, find.text('Sign in'));
@@ -74,7 +74,7 @@ void main() {
         'measuredAtMs': time,
         'receivedAtMs': {'.sv': 'timestamp'},
         'battery': {'percent': 67, 'chargeState': 'charging'},
-        'sensors': {'co2Ppm': 800},
+        'sensors': {'co2Ppm': 1600},
       };
       await send(
         Uri.http('$host:9000', '/.json', {
@@ -90,6 +90,14 @@ void main() {
       await waitFor(tester, find.text('Live readings'));
       expect(find.text('67%'), findsOneWidget);
       expect(find.text('Charging'), findsOneWidget);
+      await waitFor(tester, find.text('Urgent CO₂ inspection'));
+      final viewAlert = find.text('View').hitTestable();
+      await waitFor(tester, viewAlert);
+      await tester.tap(viewAlert);
+      await waitFor(
+        tester,
+        find.textContaining('urgent threshold of 1500 ppm'),
+      );
     },
   );
 }

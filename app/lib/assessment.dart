@@ -12,6 +12,95 @@ enum Risk {
 }
 
 const demoRuleVersion = 'demo-v1';
+const liveRuleVersion = 'screening-v1';
+const inspectCo2Ppm = 600;
+const urgentCo2Ppm = 1500;
+const inspectHumidityPct = 65;
+
+typedef RiskAssessment = ({Risk level, String evidence});
+
+RiskAssessment assessLive(List<Reading> window, Bin bin, DateTime now) {
+  if (window.isEmpty ||
+      now.difference(window.last.measured) >= bin.staleAfter ||
+      window.last.measured.difference(now) > const Duration(minutes: 2)) {
+    return (
+      level: Risk.insufficient,
+      evidence: 'Waiting for fresh sensor readings.',
+    );
+  }
+  final latest = window.last;
+  final co2 = latest.values[Channel.carbon];
+  final humidity = latest.values[Channel.humidity];
+  if (co2 != null && co2 >= urgentCo2Ppm) {
+    return (
+      level: Risk.critical,
+      evidence:
+          'CO₂ at ${co2.round()} ppm reached the urgent inspection threshold.',
+    );
+  }
+  final co2High = sustainedLive(window, bin, Channel.carbon, inspectCo2Ppm);
+  final humid = sustainedLive(
+    window,
+    bin,
+    Channel.humidity,
+    inspectHumidityPct,
+    strictlyAbove: true,
+  );
+  if (co2High || humid) {
+    final signals = [
+      if (co2High) 'CO₂ at or above $inspectCo2Ppm ppm',
+      if (humid) 'relative humidity above $inspectHumidityPct%',
+    ].join(' and ');
+    return (
+      level: co2High && humid ? Risk.high : Risk.watch,
+      evidence: '$signals in three consecutive readings.',
+    );
+  }
+  final pending =
+      (co2 != null && co2 >= inspectCo2Ppm) ||
+      (humidity != null && humidity > inspectHumidityPct);
+  if (pending || (co2 == null && humidity == null)) {
+    return (
+      level: Risk.insufficient,
+      evidence: pending
+          ? 'Checking whether the elevated reading persists.'
+          : 'CO₂ and relative humidity are unavailable.',
+    );
+  }
+  return (
+    level: Risk.normal,
+    evidence: co2 == null || humidity == null
+        ? 'Available screening readings are below their thresholds. One screening signal is missing.'
+        : 'CO₂ and relative humidity are below their inspection thresholds.',
+  );
+}
+
+bool sustainedLive(
+  List<Reading> window,
+  Bin bin,
+  Channel channel,
+  int threshold, {
+  bool strictlyAbove = false,
+}) {
+  if (window.length < 3) return false;
+  final samples = window.skip(window.length - 3).toList();
+  for (var index = 0; index < samples.length; index++) {
+    final reading = samples[index];
+    final value = reading.values[channel];
+    if (value == null ||
+        (strictlyAbove ? value <= threshold : value < threshold)) {
+      return false;
+    }
+    if (index == 0) continue;
+    final interval = reading.measured.difference(samples[index - 1].measured);
+    if (interval <= Duration.zero ||
+        interval >= bin.staleAfter ||
+        interval > bin.cadence * 2) {
+      return false;
+    }
+  }
+  return true;
+}
 
 List<Risk> dailyDemoRisk(
   List<Reading> history,
@@ -26,24 +115,17 @@ List<Risk> dailyDemoRisk(
     if (window.length > 3) window.removeAt(0);
     final day = 6 - now.difference(reading.measured).inDays;
     if (day < 0) continue;
-    final level = assess(window, reading.measured, cadence, demo: true).level;
+    final level = assessDemo(window, reading.measured, cadence).level;
     if (level.index > levels[day].index) levels[day] = level;
   }
   return levels;
 }
 
-({Risk level, String evidence}) assess(
+RiskAssessment assessDemo(
   List<Reading> history,
   DateTime now,
-  Duration cadence, {
-  required bool demo,
-}) {
-  if (!demo) {
-    return (
-      level: Risk.insufficient,
-      evidence: 'Live risk thresholds are awaiting project validation.',
-    );
-  }
+  Duration cadence,
+) {
   final recent = history
       .where(
         (r) =>
@@ -117,6 +199,8 @@ List<AlertEpisode> episodes(
   final faultActive = <Channel>{};
   Reading? previous;
   final recent = <Reading>[];
+  final liveStarts = <Channel, DateTime>{};
+  final liveSeverity = <Channel, bool>{};
   for (final reading in history) {
     final contiguous =
         previous != null &&
@@ -128,6 +212,8 @@ List<AlertEpisode> episodes(
       riskIndex = null;
       faultStarts.clear();
       faultActive.clear();
+      liveStarts.clear();
+      liveSeverity.clear();
     }
     previous = reading;
     final power = reading.values[Channel.battery];
@@ -181,8 +267,55 @@ List<AlertEpisode> episodes(
     }
     recent.add(reading);
     if (recent.length > 3) recent.removeAt(0);
-    if (!demo) continue;
-    final risk = assess(recent, reading.measured, bin.cadence, demo: true);
+    if (!demo) {
+      for (final channel in [Channel.carbon, Channel.humidity]) {
+        final value = reading.values[channel];
+        if (value == null) continue;
+        final isCarbon = channel == Channel.carbon;
+        final threshold = isCarbon ? inspectCo2Ppm : inspectHumidityPct;
+        // Rearm after three readings in the recovery band.
+        final recovery = isCarbon ? 550 : 63;
+        if (recent.length == 3 &&
+            recent.every(
+              (item) => (item.values[channel] ?? double.infinity) <= recovery,
+            )) {
+          liveStarts.remove(channel);
+          liveSeverity.remove(channel);
+        }
+        final urgent = isCarbon && value >= urgentCo2Ppm;
+        if (!urgent &&
+            !sustainedLive(
+              recent,
+              bin,
+              channel,
+              threshold,
+              strictlyAbove: !isCarbon,
+            )) {
+          continue;
+        }
+        final previousSeverity = liveSeverity[channel];
+        if (previousSeverity != null && (previousSeverity || !urgent)) continue;
+        final start = liveStarts.putIfAbsent(channel, () => reading.measured);
+        liveSeverity[channel] = urgent;
+        result.add(
+          AlertEpisode(
+            'quality_${channel.name}_${bin.lot}_${start.millisecondsSinceEpoch}_${urgent ? 'urgent' : 'inspect'}',
+            urgent
+                ? 'Urgent CO₂ inspection'
+                : isCarbon
+                ? 'Inspect elevated CO₂'
+                : 'Inspect elevated humidity',
+            '${channel.label} at ${value.round()} ${channel.unit} · ${urgent ? 'urgent threshold of $urgentCo2Ppm ppm' : 'three consecutive elevated readings'}',
+            urgent ? 'Contact the storage operator for immediate inspection.' : 'Check the sensor and inspect the lot for moisture or heating.',
+            reading.measured,
+            channel,
+            critical: urgent,
+          ),
+        );
+      }
+      continue;
+    }
+    final risk = assessDemo(recent, reading.measured, bin.cadence);
     if (risk.level == Risk.normal) riskIndex = null;
     if (risk.level.index >= Risk.watch.index) {
       final existing = riskIndex == null ? null : result[riskIndex];

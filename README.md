@@ -122,4 +122,19 @@ The firmware can sign in over HTTPS using the [Firebase Auth REST API](https://f
 
 The optional sensor fields are `temperatureC`, `relativeHumidityPct`, `co2Ppm`, `gasResistanceOhm`, `acousticEvents`, and `acousticWindowSec`. Acoustic counts require a valid window. The optional battery object accepts `percent`, `voltageMv`, and `chargeState`. Omit unavailable fields and keep measured zero values. Confirm cadence, battery sampling time, discharge thresholds and quality flag vocabulary with the node team before freezing the contract.
 
-Live risk thresholds, calibrated grain moisture, storage life and dry matter loss remain gated pending project validation and a confirmed payload. Demo estimates and the demo risk evaluator are illustrative.
+## Live alerts and storage estimates
+
+The live dashboard uses the following inspection rules. They are operational screening thresholds for ordinary grain storage. Placement, ventilation, calibration and planned CO₂ treatment affect the interpretation.
+
+| Signal | Live rule |
+| --- | --- |
+| CO₂ | Below 600 ppm does not trigger a CO₂ alert. From 600 to 1,499 ppm, three consecutive readings trigger an inspection alert. At 1,500 ppm or above, one fresh reading triggers an urgent inspection alert. Three readings at or below 550 ppm rearm the CO₂ episode. [Dirk Maier's grain storage guidance](https://www.grainjournal.com/article/209179/stored-grain-management-carbon-dioxide-monitoring) |
+| Relative humidity | Above 65% on three consecutive readings triggers inspection. Three readings at or below 63% rearm the episode. This is bin air RH. [University of Kentucky grain storage guidance](https://bae.mgcafe.uky.edu/extension/grain-storage-systems) |
+| Temperature | Displayed and trended. The storage allowance uses measured grain temperature together with grain moisture. |
+| Gas resistance and acoustic activity | Displayed and trended. Grain quality limits need device and lot calibration. |
+| Battery | Two consecutive readings at or below 20% open a device alert. A reading at or below 10% during an active low battery episode can escalate it. A reading at or above 24% rearms the episode. |
+| Feed | The bin's configurable timeout raises a stale-feed alert. |
+
+An alert appears in the in-app inbox and can post to Android while its bin is open. Use **Alerts → Manage Android notifications** to allow the Android channel. A closed-app push needs a trusted event processor and Firebase Cloud Messaging sender. [FCM server environment](https://firebase.google.com/docs/cloud-messaging/server-environment)
+
+Remaining storage days are a planning estimate for steady conditions. In `devices/{deviceId}/meta/storageEstimate`, provide the current `lotId`, `storedSinceMs` (UTC epoch milliseconds), measured `grainMoisturePctWetBasis`, measured `grainTemperatureC`, and `constantConditionsConfirmed: true` after verifying that the conditions represent the lot since storage began. GrainGuard selects the next warmer and wetter supported cell in Table 3 and subtracts elapsed storage time. The table targets approximately 0.5% dry matter loss. The app leaves censored cells, unsupported ranges, and missing measurements unavailable. It does not derive grain moisture from air humidity or dry matter loss from CO₂ concentration. [University of Arkansas Extension, FSA1058](https://www.uaex.uada.edu/publications/pdf/FSA1058.pdf)

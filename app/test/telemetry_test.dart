@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grainguard/assessment.dart';
 import 'package:grainguard/reports.dart';
 import 'package:grainguard/telemetry.dart';
+import 'package:grainguard/storage_life.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -102,19 +103,121 @@ void main() {
     );
   });
 
-  test('illustrative risk requires a sustained window and remains unavailable in live mode', () {
+  test('illustrative risk requires a sustained window', () {
     final fixture = DemoHistory(Scenario.rising, now);
     final history = [fixture.sample(2), fixture.sample(1), fixture.sample(0)];
-    expect(assess(history, now, bin.cadence, demo: true).level, Risk.high);
+    expect(assessDemo(history, now, bin.cadence).level, Risk.high);
     expect(
-      assess(history, now, bin.cadence, demo: false).level,
-      Risk.insufficient,
-    );
-    expect(
-      assess(history.take(2).toList(), now, bin.cadence, demo: true).level,
+      assessDemo(history.take(2).toList(), now, bin.cadence).level,
       Risk.insufficient,
     );
   });
+
+  test('real CO₂ produces one inspection and an immediate escalation', () {
+    const fast = Bin(
+      'GG001',
+      'East Silo',
+      'WHEAT-001',
+      cadence: Duration(seconds: 5),
+      offlineTimeout: Duration(seconds: 20),
+    );
+    Reading sample(int index, int ppm, {int humidity = 60}) => Reading(
+      id: 'quality-$index',
+      device: fast.id,
+      lot: fast.lot,
+      measured: now.add(Duration(seconds: index * 5)),
+      received: now,
+      values: {
+        Channel.carbon: ppm.toDouble(),
+        Channel.humidity: humidity.toDouble(),
+      },
+    );
+    final readings = [
+      sample(0, 599),
+      sample(1, 600),
+      sample(2, 650),
+      sample(3, 650),
+    ];
+    expect(
+      assessLive(readings.take(3).toList(), fast, readings[2].measured).level,
+      Risk.insufficient,
+    );
+    expect(
+      assessLive(readings, fast, readings.last.measured).level,
+      Risk.watch,
+    );
+    expect(
+      episodes(readings.take(3).toList(), fast, FeedStatus.live, demo: false),
+      isEmpty,
+    );
+    final inspection = episodes(
+      readings,
+      fast,
+      FeedStatus.live,
+      demo: false,
+    ).single;
+    expect(inspection.critical, isFalse);
+    readings.addAll([sample(4, 1500), sample(5, 1700)]);
+    final events = episodes(readings, fast, FeedStatus.live, demo: false);
+    expect(events.map((event) => event.critical), [true, false]);
+    expect(events.last.id, inspection.id);
+    expect(events.first.id, isNot(inspection.id));
+    expect(
+      assessLive([readings[4]], fast, readings[4].measured).level,
+      Risk.critical,
+    );
+    expect(
+      assessLive(
+        [readings[4]],
+        fast,
+        readings[4].measured.add(const Duration(seconds: 20)),
+      ).level,
+      Risk.insufficient,
+    );
+    readings.addAll([
+      sample(6, 550),
+      sample(7, 550),
+      sample(8, 550),
+      sample(9, 1500),
+    ]);
+    expect(episodes(readings, fast, FeedStatus.live, demo: false).length, 3);
+
+    final humid = [
+      sample(0, 500, humidity: 66),
+      sample(1, 500, humidity: 68),
+      sample(2, 500, humidity: 66),
+    ];
+    expect(
+      episodes(humid, fast, FeedStatus.live, demo: false).single.channel,
+      Channel.humidity,
+    );
+    final interrupted = [sample(0, 700), sample(1, 700), sample(5, 700)];
+    expect(episodes(interrupted, fast, FeedStatus.live, demo: false), isEmpty);
+  });
+
+  test(
+    'storage estimate uses the published table and elapsed storage days',
+    () {
+      final since = now.subtract(const Duration(days: 10));
+      expect(estimateStorageLife(StorageConditions(since, 15, 25), now), (
+        remainingDays: 30,
+        referenceDays: 40,
+      ));
+      expect(estimateStorageLife(StorageConditions(since, 15.1, 25.1), now), (
+        remainingDays: 0,
+        referenceDays: 10,
+      ));
+      expect(
+        estimateStorageLife(StorageConditions(since, 12, 25), now),
+        isNull,
+      );
+      expect(
+        estimateStorageLife(StorageConditions(since, 24, 30), now),
+        isNull,
+      );
+      expect(estimateStorageLife(null, now), isNull);
+    },
+  );
 
   test(
     'report carries mode, coverage, units and spreadsheet-safe identifiers',

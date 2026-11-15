@@ -103,6 +103,7 @@ class Cloud {
           cadence: Duration(seconds: seconds),
           offlineTimeout: timeout == null ? null : Duration(seconds: timeout),
           firmware: data['firmwareVersion'] as String?,
+          storage: StorageConditions.decode(data['storageEstimate'], lot),
         );
       });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'assessment.dart';
 import 'detail.dart';
 import 'source.dart';
+import 'storage_life.dart';
 import 'telemetry.dart';
 import 'visuals.dart';
 
@@ -258,7 +260,8 @@ class _DashboardState extends ConsumerState<Dashboard>
   final failed = <String>{};
   bool ackError = false;
   bool foreground = true;
-  String? lastBanner;
+  final announced = <String>{};
+  static const notifications = MethodChannel('grainguard/alerts');
   DateTime now = DateTime.now().toUtc();
 
   bool get demo => widget.scenario != null;
@@ -281,6 +284,7 @@ class _DashboardState extends ConsumerState<Dashboard>
               feedStatus(bin, latest, now, connected) ||
           current.difference(now) >= const Duration(seconds: 15)) {
         setState(() => now = current);
+        if (status == FeedStatus.stale) announceAlerts();
       }
     });
     if (demo) loadOverview();
@@ -308,6 +312,7 @@ class _DashboardState extends ConsumerState<Dashboard>
           }
         }
       });
+      if (!demo) announceAlerts();
     } catch (_) {
       // The latest stream still works independently of history.
     }
@@ -348,26 +353,7 @@ class _DashboardState extends ConsumerState<Dashboard>
             ]..sort((a, b) => a.measured.compareTo(b.measured));
           }
         });
-        if (!demo && status == FeedStatus.live) {
-          final events = episodes(recent, bin, status, demo: false);
-          if (events.isNotEmpty) {
-            final event = events.first;
-            if (event.id != lastBanner &&
-                now.difference(event.time) <= bin.cadence * 2 &&
-                !acked.contains(event.id)) {
-              lastBanner = event.id;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(event.title),
-                  action: SnackBarAction(
-                    label: 'View',
-                    onPressed: () => setState(() => tab = 2),
-                  ),
-                ),
-              );
-            }
-          }
-        }
+        if (status == FeedStatus.live) announceAlerts();
       },
       onError: (Object error) {
         if (!mounted || !foreground) return;
@@ -392,6 +378,67 @@ class _DashboardState extends ConsumerState<Dashboard>
         if (mounted && foreground) setState(() => ackError = true);
       },
     );
+  }
+
+  void announceAlerts() {
+    if (demo ||
+        !foreground ||
+        (status != FeedStatus.live && status != FeedStatus.stale)) {
+      return;
+    }
+    final tolerance = bin.cadence * 2;
+    final events = episodes(recent, bin, status, demo: false).where((event) {
+      final age = now.difference(event.time);
+      return age >= const Duration(minutes: -2) &&
+          age <= tolerance &&
+          (status == FeedStatus.stale) == event.id.startsWith('stale_') &&
+          !acked.contains(event.id) &&
+          announced.add(event.id);
+    }).toList();
+    if (events.isEmpty) return;
+    final urgent =
+        events.where((event) => event.critical).firstOrNull ?? events.first;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(urgent.title),
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              if (mounted) setState(() => tab = 2);
+            },
+          ),
+        ),
+      );
+    for (final event in events) {
+      unawaited(
+        sendNotification('show', {
+          'id': '${bin.id}_${event.id}',
+          'title': event.title,
+          'body': '${bin.label} · ${event.evidence}',
+        }),
+      );
+    }
+  }
+
+  Future<void> sendNotification(
+    String method, [
+    Map<String, String>? arguments,
+  ]) async {
+    try {
+      await notifications.invokeMethod<void>(method, arguments);
+    } on MissingPluginException {
+      // The in-app alerts remain available on other platforms.
+    } on PlatformException {
+      if (method == 'enable' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Open Android settings to manage notifications.'),
+          ),
+        );
+      }
+    }
   }
 
   void stop() {
@@ -450,7 +497,15 @@ class _DashboardState extends ConsumerState<Dashboard>
 
   @override
   Widget build(BuildContext context) {
-    final assessment = assess(recent, now, bin.cadence, demo: demo);
+    final assessment = demo
+        ? assessDemo(recent, now, bin.cadence)
+        : assessLive(
+            status == FeedStatus.live
+                ? recent.reversed.take(3).toList().reversed.toList()
+                : [],
+            bin,
+            now,
+          );
     final currentBattery = status == FeedStatus.clock ? null : latest;
     final power = currentBattery?.values[Channel.battery];
     final cached =
@@ -568,6 +623,16 @@ class _DashboardState extends ConsumerState<Dashboard>
         ? null
         : latest;
     final scenario = widget.scenario;
+    final storage = estimateStorageLife(
+      demo && scenario != Scenario.interrupted && latest != null
+          ? StorageConditions(
+              latest!.measured.subtract(const Duration(days: 3)),
+              scenario == Scenario.rising ? 17 : 15,
+              25,
+            )
+          : bin.storage,
+      now,
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 9, 18, 25),
       children: [
@@ -720,14 +785,15 @@ class _DashboardState extends ConsumerState<Dashboard>
               Text(risk.level.label, style: display(36, color: ink)),
               const SizedBox(height: 7),
               Text(risk.evidence),
-              if (demo)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Illustrative rules · demo-v1',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  demo
+                      ? 'Illustrative rules · $demoRuleVersion'
+                      : 'Inspection screening · $liveRuleVersion',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+              ),
             ],
           ),
         ),
@@ -741,16 +807,28 @@ class _DashboardState extends ConsumerState<Dashboard>
                 style: display(23),
               ),
               const SizedBox(height: 9),
-              Text(
-                scenario != null && scenario != Scenario.interrupted
-                    ? 'Remaining life: ${scenario == Scenario.rising ? '12 days (9–16)' : '34 days (26–43)'}.'
-                    : 'Remaining life: Estimate unavailable.',
-              ),
-              if (scenario != null && scenario != Scenario.interrupted) ...[
-                Text('Forecast: ${timeLabel(latest?.measured ?? now)}'),
+              if (!demo && risk.level == Risk.critical)
+                const Text(
+                  'Inspect the lot before relying on a storage estimate.',
+                )
+              else if (!demo && status != FeedStatus.live)
+                const Text(
+                  'Waiting for fresh readings to show a storage estimate.',
+                )
+              else if (storage == null)
+                const Text(
+                  'Remaining days unavailable. A supported grain moisture and temperature, the storage start date, and confirmation of steady conditions are needed.',
+                )
+              else ...[
+                Text('Estimated days left: ${storage.remainingDays}.'),
                 Text(
-                  'Illustrative threshold: ${DateFormat.yMMMd().format((latest?.measured ?? now).add(Duration(days: scenario == Scenario.rising ? 12 : 34)).toLocal())}',
+                  'Table allowance: ${storage.referenceDays} days under steady conditions.',
                 ),
+                const Text(
+                  'Quality planning estimate based on approximately 0.5% dry matter loss.',
+                ),
+              ],
+              if (scenario != null && scenario != Scenario.interrupted) ...[
                 const SizedBox(height: 5),
                 const Text(
                   'Dry matter loss: 0.14% from 2 kg CO₂ per 1,000 kg initial dry matter.',
@@ -947,9 +1025,20 @@ class _DashboardState extends ConsumerState<Dashboard>
         Text('Alerts', style: display(43)),
         const SizedBox(height: 8),
         Text(
-          '${bin.label} · ${bin.lot} · Last 7 days',
+          '${bin.label} · ${bin.lot} · Up to 7 days',
           style: const TextStyle(color: muted),
         ),
+        if (!demo) ...[
+          const SizedBox(height: 8),
+          const Text('Android alerts are available while this bin is open.'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              onPressed: () => sendNotification('enable'),
+              child: const Text('Manage Android notifications'),
+            ),
+          ),
+        ],
         if (ackError)
           const Text(
             'Acknowledgments could not be loaded.',
