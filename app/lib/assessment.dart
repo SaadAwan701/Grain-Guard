@@ -209,7 +209,7 @@ List<AlertEpisode> episodes(
   }
   if (history.isNotEmpty &&
       (status == FeedStatus.stale || status == FeedStatus.disconnected)) {
-    final time = history.last.measured.add(bin.cadence * 3);
+    final time = history.last.measured.add(bin.staleAfter);
     result.add(
       AlertEpisode(
         'stale_${bin.lot}_${history.last.measured.millisecondsSinceEpoch}',

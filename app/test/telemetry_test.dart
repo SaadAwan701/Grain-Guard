@@ -79,6 +79,29 @@ void main() {
     expect(feedStatus(bin, future, now, true), FeedStatus.clock);
   });
 
+  test('configured timeout marks the last sample stale at the deadline', () {
+    const fastBin = Bin(
+      'GG001',
+      'East Silo',
+      'WHEAT-001',
+      cadence: Duration(seconds: 5),
+      offlineTimeout: Duration(seconds: 20),
+    );
+    final reading = Reading.decode(payload(), fastBin)!;
+    expect(
+      feedStatus(fastBin, reading, now.add(const Duration(seconds: 19)), true),
+      FeedStatus.live,
+    );
+    expect(
+      feedStatus(fastBin, reading, now.add(const Duration(seconds: 20)), true),
+      FeedStatus.stale,
+    );
+    expect(
+      feedStatus(fastBin, reading, now.add(const Duration(seconds: 20)), false),
+      FeedStatus.disconnected,
+    );
+  });
+
   test('illustrative risk requires a sustained window and remains unavailable in live mode', () {
     final fixture = DemoHistory(Scenario.rising, now);
     final history = [fixture.sample(2), fixture.sample(1), fixture.sample(0)];

@@ -47,6 +47,8 @@ void main() {
       await tester.enterText(inputs.at(1), localPassword);
       await tester.ensureVisible(find.text('Sign in'));
       await tester.tap(find.text('Sign in'));
+      await waitFor(tester, find.text('Choose your grain'));
+      await tester.tap(find.text('Wheat'));
       await waitFor(tester, find.text('Waiting for first reading'));
 
       final credentials = await send(

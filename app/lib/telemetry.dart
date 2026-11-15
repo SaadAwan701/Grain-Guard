@@ -31,12 +31,15 @@ class Bin {
     this.label,
     this.lot, {
     this.cadence = const Duration(minutes: 10),
+    this.offlineTimeout,
     this.firmware,
   });
   final String id;
   final String label;
   final String lot;
   final Duration cadence;
+  final Duration? offlineTimeout;
+  Duration get staleAfter => offlineTimeout ?? cadence * 3;
   final String? firmware;
 }
 
@@ -128,7 +131,7 @@ enum FeedStatus {
   connecting('Connecting'),
   waiting('Waiting for first reading'),
   live('Live readings'),
-  stale('No recent device readings'),
+  stale('System offline · No new data'),
   disconnected('Connection lost'),
   clock('Device clock needs checking'),
   invalid('Reading could not be verified'),
@@ -145,7 +148,7 @@ FeedStatus feedStatus(Bin bin, Reading? latest, DateTime now, bool? connected) {
   if (latest.measured.difference(now) > const Duration(minutes: 2)) {
     return FeedStatus.clock;
   }
-  if (now.difference(latest.measured) >= bin.cadence * 3) {
+  if (now.difference(latest.measured) >= bin.staleAfter) {
     return FeedStatus.stale;
   }
   return FeedStatus.live;
@@ -162,13 +165,20 @@ enum Scenario {
 }
 
 class DemoHistory {
-  DemoHistory(this.scenario, this.anchor);
+  DemoHistory(this.scenario, this.anchor, {this.bin = wheatBin});
   final Scenario scenario;
   final DateTime anchor;
-  static const bin = Bin(
+  final Bin bin;
+  static const wheatBin = Bin(
     'GG-DEMO',
     'East Silo',
     'WHEAT-DEMO',
+    firmware: 'Demo node',
+  );
+  static const riceBin = Bin(
+    'GG-DEMO-RICE',
+    'East Silo',
+    'RICE-DEMO',
     firmware: 'Demo node',
   );
 

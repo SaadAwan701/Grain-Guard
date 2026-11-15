@@ -21,16 +21,36 @@ TextStyle display(double size, {Color color = paper}) => TextStyle(
   letterSpacing: -0.028 * size,
 );
 
-class KernelStage extends StatefulWidget {
-  const KernelStage({super.key, this.interactive = true});
-  final bool interactive;
+enum Grain {
+  wheat('Wheat', Color(0xffffce79), Color(0xff8a4426)),
+  rice('Rice', Color(0xfff9e9cb), Color(0xff285d55));
 
-  @override
-  State<KernelStage> createState() => _KernelStageState();
+  const Grain(this.label, this.accent, this.dye);
+  final String label;
+  final Color accent;
+  final Color dye;
+
+  String get sackLabel => '$label sack';
 }
 
-class _KernelStageState extends State<KernelStage> {
-  final orientation = ValueNotifier((0.20, -0.46));
+class SackStage extends StatefulWidget {
+  const SackStage({
+    super.key,
+    required this.grain,
+    this.interactive = true,
+    this.height = 236,
+  });
+
+  final Grain grain;
+  final bool interactive;
+  final double height;
+
+  @override
+  State<SackStage> createState() => _SackStageState();
+}
+
+class _SackStageState extends State<SackStage> {
+  final orientation = ValueNotifier((.55, -.32));
 
   @override
   void dispose() {
@@ -43,21 +63,22 @@ class _KernelStageState extends State<KernelStage> {
     final drag = widget.interactive && !MediaQuery.disableAnimationsOf(context);
     return Semantics(
       image: true,
-      label: 'Illustration of a wheat kernel',
+      label:
+          'Illustration of a sack filled with ${widget.grain.label.toLowerCase()}',
       child: GestureDetector(
         onPanUpdate: drag
             ? (details) {
                 final (pitch, yaw) = orientation.value;
                 orientation.value = (
-                  (pitch + details.delta.dy * .013).clamp(-1.2, 1.2),
-                  (yaw + details.delta.dx * .013) % (math.pi * 2),
+                  (pitch + details.delta.dy * .012).clamp(.23, 1.04),
+                  (yaw + details.delta.dx * .012) % (2 * math.pi),
                 );
               }
             : null,
         child: RepaintBoundary(
           child: CustomPaint(
-            painter: KernelPainter(orientation),
-            child: const SizedBox(width: double.infinity, height: 220),
+            painter: SackPainter(widget.grain, orientation),
+            child: SizedBox(width: double.infinity, height: widget.height),
           ),
         ),
       ),
@@ -65,123 +86,215 @@ class _KernelStageState extends State<KernelStage> {
   }
 }
 
-typedef Point3 = ({double x, double y, double z});
+typedef _Point = ({double x, double y, double z});
+typedef _Face = ({int a, int b, int c, Color color});
 
-class KernelPainter extends CustomPainter {
-  KernelPainter(this.orientation) : super(repaint: orientation);
-  final ValueNotifier<(double, double)> orientation;
-  static const sides = 14;
-  static const rings = 11;
-  static final mesh = [
-    for (var row = 0; row <= rings; row++)
-      for (var col = 0; col < sides; col++)
-        _vertex(row / rings, col * 2 * math.pi / sides),
-  ];
+class _SackMesh {
+  final points = <_Point>[];
+  final faces = <_Face>[];
 
-  static Point3 _vertex(double t, double angle) {
-    final radius = .06 + math.pow(math.sin(t * math.pi), .64) * (.54 + .18 * t);
-    final crease = math.pow(math.max(0, math.sin(angle)), 34) * .22;
-    return (
-      x: math.cos(angle) * radius + .10 * math.sin(math.pi * t),
-      y: (t - .5) * 2.55,
-      z: (math.sin(angle) * .76 - crease) * radius,
-    );
+  _SackMesh(Grain grain) {
+    const sides = 32;
+    final random = math.Random(77);
+    const rings = [
+      (-1.10, .02),
+      (-1.10, .62),
+      (-1.02, .87),
+      (-.78, 1.00),
+      (-.53, 1.04),
+      (-.31, 1.03),
+      (-.05, .99),
+      (.27, .91),
+      (.56, .83),
+      (.66, .89),
+      (.75, .92),
+      (.82, .86),
+      (.77, .76),
+      (.65, .73),
+    ];
+    for (final (y, radius) in rings) {
+      for (var i = 0; i < sides; i++) {
+        final angle = 2 * math.pi * i / sides;
+        final fold =
+            1 +
+            .055 * math.cos(5 * angle + y) +
+            .035 * math.sin(9 * angle - y * 2);
+        points.add((
+          x: math.cos(angle) * radius * fold,
+          y: y + radius * .05 * math.sin(3 * angle + y),
+          z: math.sin(angle) * radius * fold * .83,
+        ));
+      }
+    }
+    for (var row = 0; row < rings.length - 1; row++) {
+      final base = switch (row) {
+        4 || 5 => grain.dye,
+        9 || 10 => const Color(0xffd2ac79),
+        11 || 12 => const Color(0xff9f754f),
+        _ => const Color(0xffb88b5d),
+      };
+      for (var i = 0; i < sides; i++) {
+        final a = row * sides + i;
+        final b = row * sides + (i + 1) % sides;
+        final color = Color.lerp(
+          base,
+          Colors.white,
+          random.nextDouble() * .085,
+        )!;
+        faces.addAll([
+          (a: a, b: a + sides, c: b, color: color),
+          (a: b, b: a + sides, c: b + sides, color: color),
+        ]);
+      }
+    }
+
+    double mound(double x, double z) =>
+        .69 + .30 * (1 - (x * x + z * z / .69) / (.76 * .76)).clamp(0.0, 1.0);
+    final pile = Color.lerp(grain.accent, const Color(0xff604326), .38)!;
+    final summit = points.length;
+    points.add((x: 0, y: mound(0, 0), z: 0));
+    for (var i = 0; i < sides; i++) {
+      final angle = 2 * math.pi * i / sides;
+      final x = math.cos(angle) * .745;
+      final z = math.sin(angle) * .62;
+      points.add((x: x, y: mound(x, z), z: z));
+      faces.add((
+        a: summit,
+        b: summit + 1 + (i + 1) % sides,
+        c: summit + 1 + i,
+        color: pile,
+      ));
+    }
+
+    // Staggered rows cover the mound with individual faceted grains.
+    for (var row = -7; row <= 7; row++) {
+      for (var col = -8; col <= 8; col++) {
+        final x =
+            (col + (row.isOdd ? .5 : 0)) * .081 +
+            (random.nextDouble() - .5) * .041;
+        final z = row * .076 + (random.nextDouble() - .5) * .045;
+        if (x * x + z * z / .69 > .69 * .69) continue;
+        final y = mound(x, z) + .018 + random.nextDouble() * .022;
+        final angle = random.nextDouble() * math.pi;
+        final length =
+            (grain == Grain.rice ? .084 : .068) *
+            (.8 + random.nextDouble() * .35);
+        final width = length * (grain == Grain.rice ? .25 : .51);
+        final start = points.length;
+        for (final (along, across) in [
+          (length, 0.0),
+          (0.0, width),
+          (-length, 0.0),
+          (0.0, -width),
+        ]) {
+          points.add((
+            x: x + along * math.cos(angle) - across * math.sin(angle),
+            y: y,
+            z: z + along * math.sin(angle) + across * math.cos(angle),
+          ));
+        }
+        points.add((x: x, y: y + width * .72, z: z));
+        final color = Color.lerp(
+          grain.accent,
+          pile,
+          random.nextDouble() * .65,
+        )!;
+        for (var edge = 0; edge < 4; edge++) {
+          faces.add((
+            a: start + edge,
+            b: start + 4,
+            c: start + (edge + 1) % 4,
+            color: color,
+          ));
+        }
+      }
+    }
   }
+}
+
+class SackPainter extends CustomPainter {
+  SackPainter(this.grain, this.orientation) : super(repaint: orientation);
+
+  final Grain grain;
+  final ValueNotifier<(double, double)> orientation;
+  static final _meshes = {
+    for (final grain in Grain.values) grain: _SackMesh(grain),
+  };
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width * .51, size.height * .50);
-    final unit = math.min(size.width * .23, size.height * .335);
-    final line = Paint()
-      ..color = const Color(0xff6e6375)
-      ..style = PaintingStyle.stroke;
-    for (var i = 1; i <= 3; i++) {
+    final center = Offset(size.width / 2, size.height * .47);
+    final scale = math.min(size.height * .33, size.width * .34);
+    final paint = Paint();
+    final ground = center + Offset(0, scale * .76);
+    canvas.drawOval(
+      Rect.fromCenter(center: ground, width: scale * 2.4, height: scale * .62),
+      paint..color = const Color(0x590b0b18),
+    );
+    for (final radius in [1.36, 1.57, 1.79]) {
       canvas.drawOval(
         Rect.fromCenter(
-          center: center,
-          width: unit * (2.05 + .63 * i),
-          height: unit * (1.05 + .40 * i),
+          center: ground,
+          width: scale * radius * 2,
+          height: scale * radius * .64,
         ),
-        line..color = const Color(0xff706078).withValues(alpha: .24 + i * .07),
+        paint
+          ..color = grain.accent.withValues(alpha: .18)
+          ..style = PaintingStyle.stroke,
       );
-    }
-    final ticks = Paint()
-      ..color = const Color(0xff827285)
-      ..strokeWidth = 1;
-    for (var i = 0; i < 36; i++) {
-      final a = i * math.pi / 18;
-      final direction = Offset(math.cos(a), math.sin(a) * .58);
-      canvas.drawLine(
-        center + direction * unit * 2.16,
-        center + direction * unit * (i % 3 == 0 ? 2.27 : 2.21),
-        ticks,
-      );
-    }
-    for (final point in [
-      const Offset(.10, .21),
-      const Offset(.87, .26),
-      const Offset(.19, .75),
-      const Offset(.81, .77),
-      const Offset(.94, .57),
-    ]) {
-      final p = Offset(size.width * point.dx, size.height * point.dy);
-      canvas.drawLine(p - const Offset(3, 0), p + const Offset(3, 0), ticks);
-      canvas.drawLine(p - const Offset(0, 3), p + const Offset(0, 3), ticks);
     }
 
     final (pitch, yaw) = orientation.value;
-    final points = mesh.map((p) {
-      final x = p.x * math.cos(yaw) + p.z * math.sin(yaw);
-      final z = p.z * math.cos(yaw) - p.x * math.sin(yaw);
-      final y = p.y * math.cos(pitch) - z * math.sin(pitch);
-      const roll = .55;
+    final mesh = _meshes[grain]!;
+    final sinPitch = math.sin(pitch);
+    final cosPitch = math.cos(pitch);
+    final sinYaw = math.sin(yaw);
+    final cosYaw = math.cos(yaw);
+    final rotated = mesh.points.map((point) {
+      final z = point.z * cosYaw - point.x * sinYaw;
       return (
-        x: x * math.cos(roll) - y * math.sin(roll),
-        y: y * math.cos(roll) + x * math.sin(roll),
-        z: p.y * math.sin(pitch) + z * math.cos(pitch),
+        x: point.x * cosYaw + point.z * sinYaw,
+        y: point.y * cosPitch - z * sinPitch,
+        z: point.y * sinPitch + z * cosPitch,
       );
     }).toList();
-    final faces = <(Point3, Point3, Point3)>[];
-    for (var row = 0; row < rings; row++) {
-      for (var col = 0; col < sides; col++) {
-        final next = (col + 1) % sides;
-        final a = points[row * sides + col];
-        final b = points[row * sides + next];
-        final c = points[(row + 1) * sides + col];
-        final d = points[(row + 1) * sides + next];
-        faces.addAll([(a, c, b), (b, c, d)]);
-      }
-    }
-    double depth((Point3, Point3, Point3) f) => f.$1.z + f.$2.z + f.$3.z;
-    faces.sort((a, b) => depth(a).compareTo(depth(b)));
-    Offset project(Point3 p) =>
-        center + Offset(p.x, p.y) * unit * 4.5 / (4.5 - p.z);
-    final paint = Paint();
-    for (final (a, b, c) in faces) {
-      final u = (x: b.x - a.x, y: b.y - a.y, z: b.z - a.z);
-      final v = (x: c.x - a.x, y: c.y - a.y, z: c.z - a.z);
-      final nx = u.y * v.z - u.z * v.y;
-      final ny = u.z * v.x - u.x * v.z;
-      final nz = u.x * v.y - u.y * v.x;
-      final length = math.sqrt(nx * nx + ny * ny + nz * nz);
-      if (length < .00001 || nz <= 0) continue;
-      final light = ((-.44 * nx - .55 * ny + .70 * nz) / length).clamp(
-        0.0,
-        1.0,
-      );
-      final pa = project(a);
-      final pb = project(b);
-      final pc = project(c);
+    final projected = rotated
+        .map((p) => center + Offset(p.x, -p.y) * scale * 6 / (6 - p.z))
+        .toList();
+    final ordered = [
+      for (final face in mesh.faces)
+        (
+          face: face,
+          depth: rotated[face.a].z + rotated[face.b].z + rotated[face.c].z,
+        ),
+    ]..sort((a, b) => a.depth.compareTo(b.depth));
+
+    for (final entry in ordered) {
+      final face = entry.face;
+      final a = rotated[face.a];
+      final b = rotated[face.b];
+      final c = rotated[face.c];
+      final ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+      final vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+      final nx = uy * vz - uz * vy;
+      final ny = uz * vx - ux * vz;
+      final nz = ux * vy - uy * vx;
+      final magnitude = math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (magnitude == 0) continue;
+      final light = ((-.4 * nx + .64 * ny + .66 * nz) / magnitude).abs();
+      final color = Color.lerp(
+        const Color(0xff392534),
+        face.color,
+        .48 + .52 * light,
+      )!;
+      final pa = projected[face.a];
+      final pb = projected[face.b];
+      final pc = projected[face.c];
       final path = Path()
         ..moveTo(pa.dx, pa.dy)
         ..lineTo(pb.dx, pb.dy)
         ..lineTo(pc.dx, pc.dy)
         ..close();
-      final color = Color.lerp(
-        const Color(0xff8b3c28),
-        const Color(0xffffe3a0),
-        light,
-      )!;
       canvas.drawPath(
         path,
         paint
@@ -191,14 +304,13 @@ class KernelPainter extends CustomPainter {
       canvas.drawPath(
         path,
         paint
-          ..color = color
           ..style = PaintingStyle.stroke
-          ..strokeWidth = .6,
+          ..strokeWidth = .45,
       );
     }
   }
 
   @override
-  bool shouldRepaint(covariant KernelPainter oldDelegate) =>
-      oldDelegate.orientation != orientation;
+  bool shouldRepaint(covariant SackPainter oldDelegate) =>
+      oldDelegate.grain != grain || oldDelegate.orientation != orientation;
 }

@@ -70,7 +70,16 @@ class Gate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final demo = ref.watch(demoProvider);
     if (demo != null) {
-      return DemoDashboard(key: ValueKey(demo), scenario: demo);
+      return GrainStart(
+        key: const ValueKey('demo-grain'),
+        onExit: () => ref.read(demoProvider.notifier).select(null),
+        dashboard: (grain, changeGrain) => DemoDashboard(
+          key: ValueKey((demo, grain)),
+          scenario: demo,
+          grain: grain,
+          onChangeGrain: changeGrain,
+        ),
+      );
     }
     return ref
         .watch(cloudProvider)
@@ -89,10 +98,15 @@ class Gate extends ConsumerWidget {
                   builder: (context, snapshot) {
                     final user = snapshot.data;
                     if (user != null) {
-                      return Assignments(
+                      return GrainStart(
                         key: ValueKey(user.uid),
-                        cloud: cloud,
-                        uid: user.uid,
+                        onExit: cloud.auth.signOut,
+                        dashboard: (grain, changeGrain) => Assignments(
+                          cloud: cloud,
+                          uid: user.uid,
+                          grain: grain,
+                          onChangeGrain: changeGrain,
+                        ),
                       );
                     }
                     return Welcome(
@@ -104,6 +118,76 @@ class Gate extends ConsumerWidget {
                   },
                 ),
         );
+  }
+}
+
+class GrainStart extends StatefulWidget {
+  const GrainStart({super.key, required this.onExit, required this.dashboard});
+
+  final VoidCallback onExit;
+  final Widget Function(Grain, VoidCallback) dashboard;
+
+  @override
+  State<GrainStart> createState() => _GrainStartState();
+}
+
+class _GrainStartState extends State<GrainStart> {
+  Grain? selection;
+
+  @override
+  Widget build(BuildContext context) {
+    final grain = selection;
+    if (grain != null) {
+      return widget.dashboard(grain, () => setState(() => selection = null));
+    }
+    return Scaffold(
+      appBar: AppBar(
+        title: const Brand(),
+        leading: BackButton(onPressed: widget.onExit),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+              children: [
+                Text('Choose your grain', style: display(43)),
+                const SizedBox(height: 10),
+                const Text(
+                  'Choose a grain to see its bins.',
+                  style: TextStyle(color: muted, fontSize: 16),
+                ),
+                const SizedBox(height: 22),
+                for (final option in Grain.values) ...[
+                  Tile(
+                    fill: option.dye,
+                    onTap: () => setState(() => selection = option),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(option.label, style: display(36))),
+                        SizedBox(
+                          width: 104,
+                          child: ExcludeSemantics(
+                            child: SackStage(
+                              grain: option,
+                              interactive: false,
+                              height: 112,
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_rounded),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -206,10 +290,13 @@ class _WelcomeState extends ConsumerState<Welcome> {
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(color: const Color(0xff514660)),
                   ),
-                  child: const KernelStage(interactive: false),
+                  child: const SackStage(
+                    grain: Grain.wheat,
+                    interactive: false,
+                  ),
                 ),
                 const SizedBox(height: 24),
-                Text('Your wheat bins', style: display(46)),
+                Text('Your grain bins', style: display(46)),
                 const SizedBox(height: 9),
                 Text(
                   widget.cloud == null
@@ -293,9 +380,17 @@ class _WelcomeState extends ConsumerState<Welcome> {
 }
 
 class Assignments extends ConsumerStatefulWidget {
-  const Assignments({super.key, required this.cloud, required this.uid});
+  const Assignments({
+    super.key,
+    required this.cloud,
+    required this.uid,
+    required this.grain,
+    required this.onChangeGrain,
+  });
   final Cloud cloud;
   final String uid;
+  final Grain grain;
+  final VoidCallback onChangeGrain;
   @override
   ConsumerState<Assignments> createState() => _AssignmentsState();
 }
@@ -304,6 +399,7 @@ class _AssignmentsState extends ConsumerState<Assignments> {
   String? selected;
   late Stream<Map<String, String>> assignments = widget.cloud.assignments(
     widget.uid,
+    widget.grain.name,
   );
 
   @override
@@ -316,7 +412,10 @@ class _AssignmentsState extends ConsumerState<Assignments> {
             !snapshot.hasError &&
             snapshot.connectionState == ConnectionState.waiting;
         return Scaffold(
-          appBar: AppBar(title: const Brand()),
+          appBar: AppBar(
+            title: const Brand(),
+            leading: BackButton(onPressed: widget.onChangeGrain),
+          ),
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -328,7 +427,7 @@ class _AssignmentsState extends ConsumerState<Assignments> {
                         ? 'Assigned bins unavailable'
                         : waiting
                         ? 'Looking for assigned bins…'
-                        : 'No bins assigned',
+                        : 'No ${widget.grain.label.toLowerCase()} bins assigned',
                     style: display(30),
                     textAlign: TextAlign.center,
                   ),
@@ -341,7 +440,10 @@ class _AssignmentsState extends ConsumerState<Assignments> {
                   if (snapshot.hasError)
                     TextButton(
                       onPressed: () => setState(() {
-                        assignments = widget.cloud.assignments(widget.uid);
+                        assignments = widget.cloud.assignments(
+                          widget.uid,
+                          widget.grain.name,
+                        );
                       }),
                       child: const Text('Retry'),
                     ),
@@ -367,7 +469,10 @@ class _AssignmentsState extends ConsumerState<Assignments> {
           : null;
       if (active == null) {
         return Scaffold(
-          appBar: AppBar(title: const Text('Select a wheat bin')),
+          appBar: AppBar(
+            title: const Text('Select a bin'),
+            leading: BackButton(onPressed: widget.onChangeGrain),
+          ),
           body: ListView(
             children: [
               for (final entry in bins.entries)
@@ -387,6 +492,8 @@ class _AssignmentsState extends ConsumerState<Assignments> {
         uid: widget.uid,
         id: active,
         label: bins[active]!,
+        grain: widget.grain,
+        onChangeGrain: widget.onChangeGrain,
         onSelect: bins.length == 1
             ? null
             : () => setState(() => selected = null),

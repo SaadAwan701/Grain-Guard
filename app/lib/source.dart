@@ -69,14 +69,18 @@ class Cloud {
     return Cloud(auth, database);
   }
 
-  Stream<Map<String, String>> assignments(String uid) => database
+  Stream<Map<String, String>> assignments(String uid, String grain) => database
       .ref('memberships/$uid')
       .onValue
       .map(
         (event) => {
           for (final item in event.snapshot.children)
-            if (item.key != null)
-              item.key!: fields(item.value)['label'] as String? ?? item.key!,
+            if (item.key != null &&
+                (fields(item.value)['grainType'] ?? 'wheat') == grain)
+              item.key!: switch (fields(item.value)['label']) {
+                final String label => label,
+                _ => item.key!,
+              },
         },
       );
 
@@ -87,11 +91,17 @@ class Cloud {
         if (lot is! String || lot.isEmpty) return null;
         final seconds =
             number(data['expectedCadenceSec'], 1, 86400)?.round() ?? 600;
+        final timeout = number(
+          data['offlineTimeoutSec'],
+          seconds + 1,
+          259200,
+        )?.round();
         return Bin(
           id,
           data['label'] is String ? data['label'] as String : label,
           lot,
           cadence: Duration(seconds: seconds),
+          offlineTimeout: timeout == null ? null : Duration(seconds: timeout),
           firmware: data['firmwareVersion'] as String?,
         );
       });

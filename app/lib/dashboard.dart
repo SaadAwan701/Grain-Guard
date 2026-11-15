@@ -70,29 +70,58 @@ String valueLabel(Channel channel, double? value) {
 }
 
 class DemoDashboard extends StatelessWidget {
-  const DemoDashboard({super.key, required this.scenario});
+  const DemoDashboard({
+    super.key,
+    required this.scenario,
+    required this.grain,
+    required this.onChangeGrain,
+  });
   final Scenario scenario;
+  final Grain grain;
+  final VoidCallback onChangeGrain;
 
   @override
-  Widget build(BuildContext context) =>
-      DemoSession(key: ValueKey(scenario), scenario: scenario);
+  Widget build(BuildContext context) => DemoSession(
+    key: ValueKey(scenario),
+    scenario: scenario,
+    grain: grain,
+    onChangeGrain: onChangeGrain,
+  );
 }
 
 class DemoSession extends StatefulWidget {
-  const DemoSession({super.key, required this.scenario});
+  const DemoSession({
+    super.key,
+    required this.scenario,
+    required this.grain,
+    required this.onChangeGrain,
+  });
   final Scenario scenario;
+  final Grain grain;
+  final VoidCallback onChangeGrain;
   @override
   State<DemoSession> createState() => _DemoSessionState();
 }
 
 class _DemoSessionState extends State<DemoSession> {
   late final feed = DemoFeed(
-    DemoHistory(widget.scenario, DateTime.now().toUtc()),
+    DemoHistory(
+      widget.scenario,
+      DateTime.now().toUtc(),
+      bin: widget.grain == Grain.rice
+          ? DemoHistory.riceBin
+          : DemoHistory.wheatBin,
+    ),
   );
 
   @override
-  Widget build(BuildContext context) =>
-      Dashboard(bin: DemoHistory.bin, feed: feed, scenario: widget.scenario);
+  Widget build(BuildContext context) => Dashboard(
+    bin: feed.data.bin,
+    feed: feed,
+    scenario: widget.scenario,
+    grain: widget.grain,
+    onChangeGrain: widget.onChangeGrain,
+  );
 }
 
 class LiveBin extends StatefulWidget {
@@ -102,12 +131,16 @@ class LiveBin extends StatefulWidget {
     required this.uid,
     required this.id,
     required this.label,
+    required this.grain,
+    required this.onChangeGrain,
     this.onSelect,
   });
   final Cloud cloud;
   final String uid;
   final String id;
   final String label;
+  final Grain grain;
+  final VoidCallback onChangeGrain;
   final VoidCallback? onSelect;
 
   @override
@@ -153,6 +186,10 @@ class _LiveBinState extends State<LiveBin> {
                       child: const Text('Choose another bin'),
                     ),
                   TextButton(
+                    onPressed: widget.onChangeGrain,
+                    child: const Text('Change grain'),
+                  ),
+                  TextButton(
                     onPressed: widget.cloud.auth.signOut,
                     child: const Text('Sign out'),
                   ),
@@ -169,6 +206,8 @@ class _LiveBinState extends State<LiveBin> {
         key: ValueKey(bin.lot),
         bin: bin,
         feed: feed!,
+        grain: widget.grain,
+        onChangeGrain: widget.onChangeGrain,
         onSelect: widget.onSelect,
         onSignOut: widget.cloud.auth.signOut,
       );
@@ -181,12 +220,16 @@ class Dashboard extends ConsumerStatefulWidget {
     super.key,
     required this.bin,
     required this.feed,
+    required this.grain,
+    required this.onChangeGrain,
     this.scenario,
     this.onSelect,
     this.onSignOut,
   });
   final Bin bin;
   final Feed feed;
+  final Grain grain;
+  final VoidCallback onChangeGrain;
   final Scenario? scenario;
   final VoidCallback? onSelect;
   final Future<void> Function()? onSignOut;
@@ -231,8 +274,14 @@ class _DashboardState extends ConsumerState<Dashboard>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     subscribe();
-    clock = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (foreground) setState(() => now = DateTime.now().toUtc());
+    clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!foreground || latest == null || connected != true) return;
+      final current = DateTime.now().toUtc();
+      if (feedStatus(bin, latest, current, connected) !=
+              feedStatus(bin, latest, now, connected) ||
+          current.difference(now) >= const Duration(seconds: 15)) {
+        setState(() => now = current);
+      }
     });
     if (demo) loadOverview();
   }
@@ -617,7 +666,7 @@ class _DashboardState extends ConsumerState<Dashboard>
               Stack(
                 alignment: Alignment.bottomCenter,
                 children: [
-                  KernelStage(interactive: !staticModel),
+                  SackStage(grain: widget.grain, interactive: !staticModel),
                   Positioned(
                     left: 15,
                     right: 15,
@@ -625,10 +674,12 @@ class _DashboardState extends ConsumerState<Dashboard>
                     child: IgnorePointer(
                       child: Row(
                         children: [
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Wheat kernel',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                              widget.grain.sackLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                           if (!staticModel &&
@@ -990,9 +1041,17 @@ class _DashboardState extends ConsumerState<Dashboard>
               onTap: () =>
                   showDevice(context, bin, status, latest, lastBattery),
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.grass_rounded),
+              title: const Text('Change grain'),
+              subtitle: Text(widget.grain.label),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: widget.onChangeGrain,
+            ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Static wheat model'),
+              title: const Text('Static grain model'),
               value: staticModel,
               onChanged: (value) => setState(() => staticModel = value),
             ),

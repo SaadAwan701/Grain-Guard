@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grainguard/main.dart';
 import 'package:grainguard/source.dart';
+import 'package:grainguard/visuals.dart';
 
 void main() {
   testWidgets(
-    'offline demo places battery above the kernel and exposes scenarios',
+    'offline demo selects wheat and preserves it when switching scenarios',
     (tester) async {
       tester.view.physicalSize = const Size(420, 850);
       tester.view.devicePixelRatio = 1;
@@ -21,11 +22,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Open demo mode'));
       await tester.pumpAndSettle();
+      expect(find.text('Choose your grain'), findsOneWidget);
+      await tester.tap(find.text('Wheat'));
+      await tester.pumpAndSettle();
       expect(find.text('DEMO'), findsOneWidget);
       expect(find.text('78%'), findsOneWidget);
       expect(
         tester.getTopLeft(find.text('78%')).dy,
-        lessThan(tester.getTopLeft(find.text('Wheat kernel')).dy),
+        lessThan(tester.getTopLeft(find.text('Wheat sack')).dy),
       );
       await tester.tap(find.text('More'));
       await tester.pumpAndSettle();
@@ -33,6 +37,7 @@ void main() {
       await tester.tap(find.text('Low battery'));
       await tester.pumpAndSettle();
       expect(find.text('12%'), findsOneWidget);
+      expect(find.text('Wheat sack'), findsOneWidget);
       await tester.tap(find.text('Alerts'));
       await tester.pumpAndSettle();
       expect(find.text('Low device battery'), findsOneWidget);
@@ -57,7 +62,13 @@ void main() {
     await tester.ensureVisible(find.text('Open demo mode'));
     await tester.tap(find.text('Open demo mode'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Rice'), 120);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rice'));
+    await tester.pumpAndSettle();
     expect(find.text('Device battery'), findsOneWidget);
+    expect(find.text('Rice sack'), findsOneWidget);
+    expect(tester.widget<SackStage>(find.byType(SackStage)).grain, Grain.rice);
     expect(tester.takeException(), isNull);
   });
 }
