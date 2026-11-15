@@ -46,7 +46,7 @@ try {
       method: 'PATCH',
       admin: true,
       body: {
-        [`memberships/${viewer}/${device}`]: { label: 'East Silo' },
+        [`memberships/${viewer}/${device}`]: { label: 'East Silo', grainType: 'wheat' },
         [`deviceWriters/${device}`]: publisher,
         [`devices/${device}/meta`]: {
           label: 'East Silo', activeLotId: lot, grainType: 'wheat', expectedCadenceSec: 600,
