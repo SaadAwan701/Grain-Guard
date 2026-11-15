@@ -67,6 +67,10 @@ Register `pk.grainguard.app.staging` and `pk.grainguard.app` in distinct team-ow
 
 Use the `GG_PRODUCTION_` prefix for the production client options. Store the release keystore outside source control, and use a local `app/android/key.properties` with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. The production release variant requires that file.
 
+Add a `label` and `grainType` (`wheat` or `rice`) to each operator membership at `memberships/{operatorUid}/{deviceId}`. Use the same grain type in `devices/{deviceId}/meta` when provisioning or changing a lot. Older memberships without a grain type appear under Wheat. Set `deviceWriters/{deviceId}` to the publisher's Firebase Auth UID.
+
+Set `expectedCadenceSec` in device metadata to the ESP32's actual publishing interval. Optionally set `offlineTimeoutSec` to an integer longer than that interval. For a publisher sending every five seconds, a 20-second timeout marks its last reading stale after 20 seconds. With no valid override, the app uses three times the expected cadence. The app listens for updates and uses a local timer to detect stale data.
+
 ## Verification and APK
 
 ```powershell
@@ -87,7 +91,34 @@ Build the production artifact with `flutter build apk --release --flavor product
 
 ## Publisher handoff
 
+The current cloud staging project is `grainguard-8248c`. Its first bin is `GG001` with lot `WHEAT-001`. Build the cloud staging APK from `app/` with `flutter build apk --release --flavor staging --dart-define-from-file=config/staging.json`. The operator and publisher sign-in details are stored locally in the ignored `app/config/first-bin-credentials.json`. Use the publisher account on the ESP32 and the operator account on the phone. The initial five-second cadence and twenty-second offline timeout are configurable in the bin metadata. On this Windows setup, an authorized Firebase CLI owner can rerun provisioning from the repository root with `node firebase/provision-first-bin.mjs <Firebase CLI account email>`.
+
 Use schema version 1. Write a stable sample ID to `devices/{deviceId}/lots/{lotId}/samples/{sampleId}`. Advance `devices/{deviceId}/latest` with the identical sample in a single atomic multi-path update, only for the active lot and a newer measurement. Backfills write history only. On a retry, read the history item first and treat the same stored measurement as already accepted. Use UTC epoch milliseconds for `measuredAtMs` and the RTDB server timestamp for `receivedAtMs`.
+
+The firmware can sign in over HTTPS using the [Firebase Auth REST API](https://firebase.google.com/docs/reference/rest/auth#section-sign-in-email-password). Keep the device account credentials in the device's local configuration and refresh its ID token when it expires. Use that token for authenticated requests to the [Realtime Database REST API](https://firebase.google.com/docs/database/rest/auth). The following is an example body for a single root `PATCH`. Use the actual IDs, time and measurements from the ESP32 in each upload.
+
+```json
+{
+  "devices/GG001/latest": {
+    "schemaVersion": 1,
+    "deviceId": "GG001",
+    "lotId": "WHEAT-001",
+    "sampleId": "GG001-1794592800000",
+    "measuredAtMs": 1794592800000,
+    "receivedAtMs": { ".sv": "timestamp" },
+    "sensors": { "temperatureC": 30.2, "relativeHumidityPct": 75.4 }
+  },
+  "devices/GG001/lots/WHEAT-001/samples/GG001-1794592800000": {
+    "schemaVersion": 1,
+    "deviceId": "GG001",
+    "lotId": "WHEAT-001",
+    "sampleId": "GG001-1794592800000",
+    "measuredAtMs": 1794592800000,
+    "receivedAtMs": { ".sv": "timestamp" },
+    "sensors": { "temperatureC": 30.2, "relativeHumidityPct": 75.4 }
+  }
+}
+```
 
 The optional sensor fields are `temperatureC`, `relativeHumidityPct`, `co2Ppm`, `gasResistanceOhm`, `acousticEvents`, and `acousticWindowSec`. Acoustic counts require a valid window. The optional battery object accepts `percent`, `voltageMv`, and `chargeState`. Omit unavailable fields and keep measured zero values. Confirm cadence, battery sampling time, discharge thresholds and quality flag vocabulary with the node team before freezing the contract.
 
